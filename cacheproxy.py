@@ -6,7 +6,7 @@ import urllib2
 import urlparse
 import os
 
-PORT = 1237
+PORT = 1235
 
 class HeadRequest(urllib2.Request):
     def get_method(self):
@@ -29,8 +29,21 @@ class HTTPRequestParser(BaseHTTPRequestHandler):
 # TODO: what if file doesn't download correctly?
 class Proxy(SimpleHTTPServer.SimpleHTTPRequestHandler):
     basepath = ''
-    def retrieve(self, req):
+    def retrieve(self):
+        try:
+            req = urllib2.urlopen(self.path)
+        except urllib2.HTTPError as e:
+            #checksLogger.error('HTTPError = ' + str(e.code))
+            self.send_response(e.code)
+            return
+
         print("Retrieving...")
+
+        # Only cache 200's
+        #if req.getcode() != 200:
+            #self.send_response(req.getcode(), req.read())
+            #return
+
         tag = req.headers["Last-Modified"]
         cached = open(os.path.join(self.basepath, "content"), "w")
         while True:
@@ -54,8 +67,7 @@ class Proxy(SimpleHTTPServer.SimpleHTTPRequestHandler):
         try:
             os.makedirs(self.basepath)
             # didn't exist! Time to create
-            req = urllib2.urlopen(self.path)
-            self.retrieve(req)
+            self.retrieve()
             return
         except:
             pass
@@ -69,8 +81,7 @@ class Proxy(SimpleHTTPServer.SimpleHTTPRequestHandler):
         except:
             pass
 
-        req = urllib2.urlopen(self.path)
-        self.retrieve(req)
+        self.retrieve()
 
 httpd = SocketServer.ForkingTCPServer(('', PORT), Proxy)
 print("serving at port", PORT)
