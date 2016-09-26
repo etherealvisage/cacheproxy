@@ -6,7 +6,7 @@ import urllib2
 import urlparse
 import os
 
-PORT = 1235
+PORT = 4000
 
 class HeadRequest(urllib2.Request):
     def get_method(self):
@@ -28,6 +28,11 @@ class HTTPRequestParser(BaseHTTPRequestHandler):
 
 # TODO: what if file doesn't download correctly?
 class Proxy(SimpleHTTPServer.SimpleHTTPRequestHandler):
+    def __init__(self, a, b, c):
+        SimpleHTTPServer.SimpleHTTPRequestHandler.__init__(self,a,b,c)
+        #super(Proxy, self).__init(a,b,c)
+        self.protocol_version = 'HTTP/1.1'
+
     basepath = ''
     def retrieve(self):
         try:
@@ -35,6 +40,8 @@ class Proxy(SimpleHTTPServer.SimpleHTTPRequestHandler):
         except urllib2.HTTPError as e:
             #checksLogger.error('HTTPError = ' + str(e.code))
             self.send_response(e.code)
+            self.send_header('x-cacheproxy-message', '404 from original server')
+            self.end_headers()
             return
 
         print("Retrieving...")
@@ -46,6 +53,9 @@ class Proxy(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
         tag = req.headers["Last-Modified"]
         cached = open(os.path.join(self.basepath, "content"), "w")
+        self.send_response(200)
+        self.send_header('content-length', req.headers['content-length'])
+        self.end_headers()
         while True:
             data = req.read(1024)
             cached.write(data)
@@ -56,13 +66,22 @@ class Proxy(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
         open(os.path.join(self.basepath, "tag"), "w").write(tag)
 
-        #cached_r = open(os.path.join(self.basepath, "content"), "r")
-        #self.copyfile(cached_r, self.wfile)
+    def do_HEAD(self):
+        print("HEAD " + str(self.path) + " invoked")
+        try:
+            headresponse = urllib2.urlopen(HeadRequest(self.path))
+        except urllib2.HTTPError as e:
+            self.send_response(e.code)
+            self.end_headers()
+            return
+        self.send_response(200)
+        for header in headresponse.headers:
+            self.send_header(header, headresponse.headers[header])
+        self.end_headers()
 
     def do_GET(self):
+        print("GET " + str(self.path) + " invoked")
         parsed = urlparse.urlparse(self.path)
-        print(parsed.netloc)
-        print(parsed.path)
         self.basepath = '/'.join(['cache', parsed.netloc, parsed.path, ''])
         try:
             os.makedirs(self.basepath)
@@ -75,7 +94,12 @@ class Proxy(SimpleHTTPServer.SimpleHTTPRequestHandler):
             tag = open(os.path.join(self.basepath, "tag"), "r").readlines()[0]
             headresponse = urllib2.urlopen(HeadRequest(self.path))
             if headresponse.headers['Last-Modified'] == tag:
-                cached_r = open(os.path.join(self.basepath, "content"), "r")
+                print("\tProviding cached copy!")
+                cached_r_name = os.path.join(self.basepath, "content")
+                cached_r = open(cached_r_name, "r")
+                self.send_response(200)
+                self.send_header('content-length', os.path.getsize(cached_r_name))
+                self.end_headers()
                 self.copyfile(cached_r, self.wfile)
                 return
         except:
@@ -84,5 +108,6 @@ class Proxy(SimpleHTTPServer.SimpleHTTPRequestHandler):
         self.retrieve()
 
 httpd = SocketServer.ForkingTCPServer(('', PORT), Proxy)
+httpd.allow_reuse_address = True
 print("serving at port", PORT)
 httpd.serve_forever()
