@@ -1,0 +1,12 @@
+[Unit]
+Description=Caching HTTP proxy
+After=network.target
+
+[Service]
+ExecStart=/home/cacheproxy/cacheproxy/cacheproxy.py
+Type=simple
+WorkingDirectory=/home/cacheproxy/
+User=cacheproxy
+
+[Install]
+WantedBy=default.target
